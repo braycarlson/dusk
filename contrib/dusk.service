@@ -1,0 +1,14 @@
+[Unit]
+Description=dusk (screen dimmer, nimble client)
+Requires=nimbled.service
+After=nimbled.service graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/dusk
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

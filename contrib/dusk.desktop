@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Dusk
+Comment=Screen dimmer
+Keywords=screen;dimmer;brightness;
+Exec=systemctl --user start dusk.service
+Icon=dusk
+Terminal=false

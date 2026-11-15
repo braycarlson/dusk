@@ -1,0 +1,19 @@
+viewbox 0 0 420 52
+fill '#404040'
+roundrectangle 0,0 419,51 10,10
+fill '#1a1a1a'
+roundrectangle 1,1 418,50 9,9
+fill '#2a2a2a'
+roundrectangle 238,10 319,41 6,6
+fill '#3b82f6'
+roundrectangle 328,10 409,41 6,6
+font 'Ubuntu-Regular'
+font-size 14
+fill '#d4d4d4'
+text 16,31 'Drag to move, edges to resize'
+font 'Ubuntu-Medium'
+text-anchor middle
+fill '#f87171'
+text 279,31 'Delete'
+fill '#ffffff'
+text 369,31 'Done'

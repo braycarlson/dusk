@@ -1,0 +1,190 @@
+const std = @import("std");
+
+const arc = @import("arc");
+const kalymma = @import("kalymma");
+const nimble = @import("nimble");
+const umbra = @import("umbra");
+
+const ApplicationType = @import("application.zig").ApplicationType;
+const Store = @import("store.zig").Store;
+
+const assert = std.debug.assert;
+
+const Application = ApplicationType(Libraries);
+
+const Libraries = struct {
+    pub const App = umbra.App;
+    pub const Client = nimble.remote.Client;
+    pub const Runtime = kalymma.Runtime;
+};
+
+const directory_name = "dusk";
+const log_backup_count: u32 = 5;
+const log_bytes_max: u32 = 5 * 1024 * 1024;
+const log_name = "dusk.log";
+const path_bytes_max: u32 = 512;
+const exit_failure: u8 = 1;
+const exit_success: u8 = 0;
+
+comptime {
+    assert(directory_name.len > 0);
+    assert(log_backup_count <= arc.limits.rotating_backup_count_max);
+    assert(log_name.len > 0);
+    assert(log_bytes_max > 0);
+    assert(path_bytes_max > log_name.len);
+    assert(path_bytes_max <= arc.limits.rotating_path_bytes_max);
+    assert(exit_failure != exit_success);
+}
+
+pub fn main() u8 {
+    var core: arc.Core = undefined;
+    var rotating_file: arc.RotatingFile = undefined;
+    var store: Store = undefined;
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
+    const rotating = open_rotating_file(io, &rotating_file);
+    defer if (rotating) |file| file.deinit(io);
+
+    const logger = if (rotating) |file| open_logger(io, &core, file) else null;
+    defer if (logger) |log| flush(log);
+
+    const application = std.heap.page_allocator.create(Application) catch |err| {
+        report(logger, "Unable to initialise the application", err);
+
+        return exit_failure;
+    };
+
+    defer std.heap.page_allocator.destroy(application);
+
+    const options = Application.Options{
+        .logger = logger,
+        .store = open_store(io, &store, logger),
+    };
+
+    application.init(options) catch |err| {
+        report(logger, "Unable to initialise the application", err);
+
+        return exit_failure;
+    };
+
+    defer application.deinit();
+
+    if (logger) |log| {
+        log.information("Starting application", &.{}, &@src());
+    }
+
+    application.run() catch |err| {
+        report(logger, "Unable to run the application", err);
+
+        return exit_failure;
+    };
+
+    return exit_success;
+}
+
+fn open_logger(io: std.Io, target: *arc.Core, file: *arc.RotatingFile) *const arc.Logger {
+    var encoding: arc.Encoding = .development;
+
+    encoding.level = .capital;
+    encoding.time = .rfc3339_nano;
+
+    const sinks = [_]arc.Core.Sink{.{
+        .encoding = encoding,
+        .level = .debug,
+        .writer = .{ .rotating_file = file },
+    }};
+
+    var options: arc.Core.Options = .development;
+
+    options.caller = false;
+    options.level = .information;
+    options.sinks = &sinks;
+
+    target.init(io, &options);
+
+    assert(target.logger.enabled(.information));
+    assert(!target.logger.enabled(.debug));
+
+    return &target.logger;
+}
+
+fn open_rotating_file(io: std.Io, target: *arc.RotatingFile) ?*arc.RotatingFile {
+    var directory_buffer: [path_bytes_max]u8 = undefined;
+
+    const directory = Libraries.App.state_dir(io, &directory_buffer, directory_name) catch {
+        return null;
+    };
+
+    assert(directory.len > 0);
+    assert(std.mem.endsWith(u8, directory, directory_name));
+
+    std.Io.Dir.cwd().createDirPath(io, directory) catch {
+        return null;
+    };
+
+    var path_buffer: [path_bytes_max]u8 = undefined;
+
+    const path = std.mem.print(
+        &path_buffer,
+        "{s}{c}{s}",
+        .{ directory, std.Io.Dir.path.sep, log_name },
+    ) catch {
+        return null;
+    };
+
+    assert(path.len > directory.len);
+    assert(std.mem.endsWith(u8, path, log_name));
+
+    target.init(io, &.{
+        .backup_count = log_backup_count,
+        .path = path,
+        .roll_daily = true,
+        .size_max = log_bytes_max,
+    }) catch {
+        return null;
+    };
+
+    return target;
+}
+
+fn open_store(io: std.Io, target: *Store, logger: ?*const arc.Logger) ?*Store {
+    if (logger) |held| assert(held.enabled(.err));
+
+    var buffer: [path_bytes_max]u8 = undefined;
+
+    const directory = Libraries.App.config_dir(io, &buffer, directory_name) catch |err| {
+        report(logger, "Unable to find the settings directory", err);
+
+        return null;
+    };
+
+    assert(directory.len > 0);
+    assert(std.mem.endsWith(u8, directory, directory_name));
+
+    target.init(io, directory) catch |err| {
+        report(logger, "Unable to open the settings store", err);
+
+        return null;
+    };
+
+    assert(target.get_path().len > directory.len);
+
+    return target;
+}
+
+fn flush(logger: *const arc.Logger) void {
+    assert(logger.enabled(.err));
+
+    logger.core.flush() catch {
+        return;
+    };
+}
+
+fn report(logger: ?*const arc.Logger, message: []const u8, err: anyerror) void {
+    assert(message.len > 0);
+    if (logger) |held| assert(held.enabled(.err));
+
+    const log = logger orelse return;
+
+    log.err(message, &.{.{ .key = "error", .value = .{ .string = @errorName(err) } }}, &@src());
+}

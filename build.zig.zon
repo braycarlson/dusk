@@ -1,0 +1,31 @@
+.{
+    .name = .dusk,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.17.1",
+    .fingerprint = 0x1948871682780add,
+    .paths = .{
+        "assets",
+        "build.zig",
+        "build.zig.zon",
+        "dusk.rc",
+        "LICENSE",
+        "src",
+    },
+    .dependencies = .{
+        .arc = .{
+            .path = "../arc",
+        },
+        .kalymma = .{
+            .path = "../kalymma",
+        },
+        .nimble = .{
+            .path = "../nimble",
+        },
+        .toml = .{
+            .path = "../toml-zig",
+        },
+        .umbra = .{
+            .path = "../umbra",
+        },
+    },
+}
